@@ -485,7 +485,7 @@ func Test_compactionTrigger_force(t *testing.T) {
 				estimateNonDiskSegmentPolicy: calBySchemaPolicy,
 				testingOnly:                  true,
 			}
-			_, err := tr.forceTriggerCompaction(tt.collectionID)
+			_, err := tr.triggerManualCompaction(tt.collectionID, false)
 			assert.Equal(t, tt.wantErr, err != nil)
 			spy := (tt.fields.compactionHandler).(*spyCompactionHandler)
 			plan := <-spy.spyChan
@@ -510,7 +510,7 @@ func Test_compactionTrigger_force(t *testing.T) {
 				testingOnly:                  true,
 			}
 			tt.collectionID = 1000
-			_, err := tr.forceTriggerCompaction(tt.collectionID)
+			_, err := tr.triggerManualCompaction(tt.collectionID, false)
 			assert.Equal(t, tt.wantErr, err != nil)
 			// expect max row num =  2048*1024*1024/(128*4) = 4194304
 			assert.EqualValues(t, 4194304, tt.fields.meta.segments.GetSegments()[0].MaxRowNum)
@@ -827,7 +827,7 @@ func Test_compactionTrigger_force_maxSegmentLimit(t *testing.T) {
 				estimateNonDiskSegmentPolicy: calBySchemaPolicy,
 				testingOnly:                  true,
 			}
-			_, err := tr.forceTriggerCompaction(tt.args.collectionID)
+			_, err := tr.triggerManualCompaction(tt.args.collectionID, false)
 			assert.Equal(t, tt.wantErr, err != nil)
 			spy := (tt.fields.compactionHandler).(*spyCompactionHandler)
 
