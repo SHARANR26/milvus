@@ -332,11 +332,11 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*DoubleFieldData).GetMemorySize()))
 		case schemapb.DataType_String, schemapb.DataType_VarChar:
 			for i, singleString := range singleData.(*StringFieldData).Data {
-				var validData []bool
+				isValid := true
 				if len(singleData.(*StringFieldData).ValidData) != 0 {
-					validData = append(validData, singleData.(*StringFieldData).ValidData[i])
+					isValid = singleData.(*StringFieldData).ValidData[i]
 				}
-				err = eventWriter.AddOneStringToPayload(singleString, validData)
+				err = eventWriter.AddOneStringToPayload(singleString, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -346,11 +346,11 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*StringFieldData).GetMemorySize()))
 		case schemapb.DataType_Array:
 			for i, singleArray := range singleData.(*ArrayFieldData).Data {
-				var validData []bool
-				if len(singleData.(*StringFieldData).ValidData) != 0 {
-					validData = append(validData, singleData.(*StringFieldData).ValidData[i])
+				isValid := true
+				if len(singleData.(*ArrayFieldData).ValidData) != 0 {
+					isValid = singleData.(*ArrayFieldData).ValidData[i]
 				}
-				err = eventWriter.AddOneArrayToPayload(singleArray, validData)
+				err = eventWriter.AddOneArrayToPayload(singleArray, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -360,11 +360,11 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*ArrayFieldData).GetMemorySize()))
 		case schemapb.DataType_JSON:
 			for i, singleJSON := range singleData.(*JSONFieldData).Data {
-				var validData []bool
-				if len(singleData.(*StringFieldData).ValidData) != 0 {
-					validData = append(validData, singleData.(*StringFieldData).ValidData[i])
+				isValid := true
+				if len(singleData.(*JSONFieldData).ValidData) != 0 {
+					isValid = singleData.(*JSONFieldData).ValidData[i]
 				}
-				err = eventWriter.AddOneJSONToPayload(singleJSON, validData)
+				err = eventWriter.AddOneJSONToPayload(singleJSON, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -1015,7 +1015,7 @@ func (deleteCodec *DeleteCodec) Serialize(collectionID UniqueID, partitionID Uni
 		if err != nil {
 			return nil, err
 		}
-		err = eventWriter.AddOneStringToPayload(string(serializedPayload), nil)
+		err = eventWriter.AddOneStringToPayload(string(serializedPayload), true)
 		if err != nil {
 			return nil, err
 		}
@@ -1187,7 +1187,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req, nil)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1197,7 +1197,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req, nil)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1207,7 +1207,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req, nil)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1217,7 +1217,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req, nil)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
