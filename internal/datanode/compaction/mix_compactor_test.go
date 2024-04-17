@@ -29,7 +29,6 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
-
 	"github.com/milvus-io/milvus/internal/datanode/allocator"
 	"github.com/milvus-io/milvus/internal/datanode/io"
 	"github.com/milvus-io/milvus/internal/datanode/metacache"
@@ -38,7 +37,6 @@ import (
 	"github.com/milvus-io/milvus/internal/proto/datapb"
 	"github.com/milvus-io/milvus/internal/proto/etcdpb"
 	"github.com/milvus-io/milvus/internal/storage"
-
 	"github.com/milvus-io/milvus/pkg/common"
 	"github.com/milvus-io/milvus/pkg/util/merr"
 	"github.com/milvus-io/milvus/pkg/util/paramtable"
@@ -254,10 +252,10 @@ func (s *MixCompactionTaskSuite) TestCompactTwoToOne() {
 func (s *MixCompactionTaskSuite) TestMergeEntityExpired() {
 	s.initSegBuffer(3)
 	// entityTs == tsoutil.ComposeTSByTime(milvusBirthday, 0)
-	collTtl := 864000 // 10 days
-	currTs := tsoutil.ComposeTSByTime(getMilvusBirthday().Add(time.Second*(time.Duration(collTtl)+1)), 0)
+	collTTL := 864000 // 10 days
+	currTs := tsoutil.ComposeTSByTime(getMilvusBirthday().Add(time.Second*(time.Duration(collTTL)+1)), 0)
 	s.task.currentTs = currTs
-	s.task.plan.CollectionTtl = int64(collTtl)
+	s.task.plan.CollectionTtl = int64(collTTL)
 
 	kvs, _, err := s.task.serializeWrite(context.TODO(), s.segBuf)
 	s.Require().NoError(err)
@@ -489,7 +487,7 @@ func (s *MixCompactionTaskSuite) TestIsExpiredEntity() {
 
 	tests := []struct {
 		description string
-		collTtl     int64
+		collTTL     int64
 		nowTs       uint64
 		entityTs    uint64
 
@@ -512,7 +510,7 @@ func (s *MixCompactionTaskSuite) TestIsExpiredEntity() {
 		s.Run(test.description, func() {
 			t := &mixCompactionTask{
 				plan: &datapb.CompactionPlan{
-					CollectionTtl: test.collTtl,
+					CollectionTtl: test.collTTL,
 				},
 				currentTs: test.nowTs,
 			}

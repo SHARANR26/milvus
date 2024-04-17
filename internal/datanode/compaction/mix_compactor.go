@@ -205,7 +205,7 @@ func (t *mixCompactionTask) statSerializeWrite(ctx context.Context, buffer *writ
 }
 
 func (t *mixCompactionTask) serializeWrite(ctx context.Context, buffer *writebuffer.SegmentInsertBuffer) (kvs map[string][]byte, fieldBinlogs map[int64]*datapb.FieldBinlog, err error) {
-	ctx, span := otel.Tracer(typeutil.DataNodeRole).Start(ctx, "serializeWrite")
+	_, span := otel.Tracer(typeutil.DataNodeRole).Start(ctx, "serializeWrite")
 	defer span.End()
 
 	blobs, tr, err := buffer.SerializeYield()

@@ -131,7 +131,7 @@ func (b *SegmentInsertBuffer) Clear() {
 }
 
 func (b *SegmentInsertBuffer) GetRowNum() int64 {
-	return int64(b.rows)
+	return b.rows
 }
 
 func (b *SegmentInsertBuffer) GetCollectionID() int64 {

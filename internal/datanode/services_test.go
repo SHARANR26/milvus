@@ -35,6 +35,7 @@ import (
 	allocator2 "github.com/milvus-io/milvus/internal/allocator"
 	"github.com/milvus-io/milvus/internal/datanode/allocator"
 	"github.com/milvus-io/milvus/internal/datanode/broker"
+	"github.com/milvus-io/milvus/internal/datanode/compaction"
 	"github.com/milvus-io/milvus/internal/datanode/metacache"
 	"github.com/milvus-io/milvus/internal/proto/datapb"
 	"github.com/milvus-io/milvus/internal/proto/internalpb"
@@ -170,8 +171,13 @@ func (s *DataNodeServicesSuite) TestGetComponentStates() {
 
 func (s *DataNodeServicesSuite) TestGetCompactionState() {
 	s.Run("success", func() {
-		s.node.compactionExecutor.executing.Insert(int64(3), newMockCompactor(true))
-		s.node.compactionExecutor.executing.Insert(int64(2), newMockCompactor(true))
+		mockC := compaction.NewMockCompactor(s.T())
+		mockC.EXPECT().GetPlanID().Return(int64(3))
+
+		mockC2 := compaction.NewMockCompactor(s.T())
+		mockC2.EXPECT().GetPlanID().Return(int64(2))
+		s.node.compactionExecutor.executing.Insert(int64(3), mockC)
+		s.node.compactionExecutor.executing.Insert(int64(2), mockC2)
 		s.node.compactionExecutor.completed.Insert(int64(1), &datapb.CompactionPlanResult{
 			PlanID: 1,
 			State:  commonpb.CompactionState_Completed,
