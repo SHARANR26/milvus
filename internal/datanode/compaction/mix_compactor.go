@@ -274,6 +274,7 @@ func (t *mixCompactionTask) merge(
 
 	downloadTimeCost := time.Duration(0)
 	serWriteTimeCost := time.Duration(0)
+	uploadTimeCost := time.Duration(0)
 
 	for _, paths := range binlogPaths {
 		downloadStart := time.Now()
@@ -340,32 +341,39 @@ func (t *mixCompactionTask) merge(
 						zap.Strings("path", paths), zap.Error(err))
 					return nil, err
 				}
+				serWriteTimeCost += time.Since(serWriteStart)
 
+				uploadStart := time.Now()
 				if err := t.binlogIO.Upload(ctx, kvs); err != nil {
 					log.Warn("compact wrong, failed to upload kvs", zap.Error(err))
 				}
-				serWriteTimeCost += time.Since(serWriteStart)
+				uploadTimeCost += time.Since(uploadStart)
 				mergeFieldBinlogs(allBinlogs, partialBinlogs)
 				syncBatchCount++
 			}
 		}
 	}
 
-	serWriteStart := time.Now()
 	if !buffer.IsEmpty() {
+		serWriteStart := time.Now()
 		kvs, partialBinlogs, err := t.serializeWrite(ctx, buffer)
 		if err != nil {
 			log.Warn("compact wrong, failed to serialize write buffer", zap.Error(err))
 			return nil, err
 		}
+		serWriteTimeCost += time.Since(serWriteStart)
 
+		uploadStart := time.Now()
 		if err := t.binlogIO.Upload(ctx, kvs); err != nil {
 			log.Warn("compact wrong, failed to upload kvs", zap.Error(err))
 		}
+		uploadTimeCost += time.Since(uploadStart)
+
 		mergeFieldBinlogs(allBinlogs, partialBinlogs)
 		syncBatchCount++
 	}
 
+	serWriteStart := time.Now()
 	sPath, err := t.statSerializeWrite(ctx, buffer, remainingRowCount)
 	if err != nil {
 		log.Warn("compact wrong, failed to serialize write buffer stats",
@@ -389,8 +397,9 @@ func (t *mixCompactionTask) merge(
 		zap.Int64("expired entities", expiredRowCount),
 		zap.Int("binlog batch count", syncBatchCount),
 		zap.Duration("download binlogs elapse", downloadTimeCost),
+		zap.Duration("upload binlogs elapse", uploadTimeCost),
 		zap.Duration("serWrite elapse", serWriteTimeCost),
-		zap.Duration("deRead elapse", totalElapse-serWriteTimeCost-downloadTimeCost),
+		zap.Duration("deRead elapse", totalElapse-serWriteTimeCost-downloadTimeCost-uploadTimeCost),
 		zap.Duration("total elapse", totalElapse))
 
 	return pack, nil
