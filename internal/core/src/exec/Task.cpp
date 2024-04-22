@@ -32,6 +32,73 @@ MakeUuid() {
     return boost::lexical_cast<std::string>(boost::uuids::random_generator()());
 }
 
+folly::Synchronized<std::vector<std::shared_ptr<TaskListener>>>&
+Listeners() {
+    static folly::Synchronized<std::vector<std::shared_ptr<TaskListener>>>
+        listeners;
+    return listeners;
+}
+
+bool
+RegisterTaskListener(std::shared_ptr<TaskListener> listener) {
+    return Listeners().withWLock([&](auto& listeners) {
+        for (const auto& existing_listener : listeners) {
+            if (existing_listener == listener) {
+                return false;
+            }
+        }
+        listeners.push_back(listener);
+        return true;
+    });
+}
+
+bool
+UnRegisterTaskListener(std::shared_ptr<TaskListener> listener) {
+    return Listeners().withWLock([&](auto& listeners) {
+        for (auto it = listeners.begin(); it != listeners.end();) {
+            if (*it == listener) {
+                it = listeners.erase(it);
+                return true;
+            } else {
+                ++it;
+            }
+        }
+        // listern not found
+        LOG_WARN("unregistered task listener {} not found", listener->name());
+        return false;
+    });
+}
+
+void
+CollectSplitPlanNodeIds(
+    const milvus::plan::PlanNode* plan_node,
+    std::unordered_set<milvus::plan::PlanNodeId>& all_ids,
+    std::unordered_set<milvus::plan::PlanNodeId>& source_ids) {
+    bool ok = all_ids.insert(plan_node->id()).second;
+    AssertInfo(
+        ok,
+        fmt::format("Plan node ids must be unique, found duplicate ID: {}",
+                    plan_node->id()));
+    if (plan_node->sources().empty()) {
+        if (plan_node->RequireSplits()) {
+            source_ids.insert(plan_node->id());
+        }
+        return;
+    }
+
+    for (const auto& source : plan_node->sources()) {
+        CollectSplitPlanNodeIds(source.get(), all_ids, source_ids);
+    }
+}
+
+std::unordered_set<milvus::plan::PlanNodeId>
+CollectSplitPlanNodeIds(const milvus::plan::PlanNode* plan_node) {
+    std::unordered_set<milvus::plan::PlanNodeId> all_ids;
+    std::unordered_set<milvus::plan::PlanNodeId> source_ids;
+    CollectSplitPlanNodeIds(plan_node, all_ids, source_ids);
+    return source_ids;
+}
+
 std::shared_ptr<Task>
 Task::Create(const std::string& task_id,
              plan::PlanFragment plan_fragment,
@@ -64,9 +131,47 @@ Task::Create(const std::string& task_id,
 }
 
 void
+Task::Start(uint32_t max_drivers, uint32_t concurrent_splitgroups) {
+    try {
+        AssertInfo(max_drivers >= 1,
+                   "max drivers parameter must be greater than or equal 1");
+        AssertInfo(
+            concurrent_splitgroups >= 1,
+            "concurrent splitgroups parameter must be greater than or equal 1");
+        Assert(drivers_.empty());
+        concurrent_split_groups_ = concurrent_splitgroups;
+
+        {
+            std::unique_lock<std::timed_mutex> lock(mutex_);
+
+            if (!IsRunningLocked()) {
+                LOG_WARN(fmt::format(
+                    "Task {} has already been terminated before start: {}",
+                    taskid_,
+                    ErrorMessageLocked()));
+                return;
+            }
+            CreateDriverFactoryLocked(max_drivers);
+        }
+        CreateAndStartDrivers(concurrent_splitgroups);
+    } catch (const std::exception& e) {
+        if (IsRunning()) {
+            SetError(std::current_exception());
+        } else {
+            // NOTE: the async task may be triggered in the middle of
+            // the start processing, we need to mark all the drivers as finished.
+            std::unique_lock<std::timed_mutex> l(mutex_);
+            Assert(num_running_drivers_ == 0);
+            Assert(num_finished_drivers_ == 0);
+            num_finished_drivers_ = num_total_drivers_;
+        }
+    }
+}
+
+void
 Task::SetError(const std::exception_ptr& exception) {
     {
-        std::lock_guard<std::mutex> l(mutex_);
+        std::lock_guard<std::timed_mutex> l(mutex_);
         if (!IsRunningLocked()) {
             return;
         }
@@ -94,13 +199,87 @@ Task::SetError(const std::string& message) {
 }
 
 void
-Task::CreateDriversLocked(std::shared_ptr<Task>& self,
-                          uint32_t split_group_id,
-                          std::vector<std::shared_ptr<Driver>>& out) {
+Task::CreateDriverFactoryLocked(uint32_t max_drivers) {
+    Assert(IsRunningLocked());
+    Assert(driver_factories_.empty());
+
+    LocalPlanner::Plan(plan_fragment_,
+                       consumer_supplier(),
+                       &driver_factories_,
+                       *query_context_->query_config(),
+                       max_drivers);
+
+    for (auto& factory : driver_factories_) {
+        if (factory->is_group_execution_) {
+            num_drivers_per_split_group_ += factory->num_drivers_;
+        } else {
+            num_ungrouped_drivers_ += factory->num_drivers_;
+        }
+
+        num_total_drivers_ += factory->num_total_drivers_;
+    }
+}
+
+void
+Task::CreateAndStartDrivers(uint32_t concurrent_split_groups) {
+    std::unique_lock<std::timed_mutex> lock(mutex_);
+    AssertInfo(
+        IsRunningLocked(),
+        fmt::format("Task {} has already been terminated before start: {}",
+                    taskid_,
+                    ErrorMessageLocked()));
+    Assert(!driver_factories_.empty());
+    Assert(concurrent_split_groups_ == 1);
+    Assert(drivers_.empty());
+
+    concurrent_split_groups_ = concurrent_split_groups;
+
+    if (num_drivers_per_split_group_ > 0) {
+        drivers_.resize(num_drivers_per_split_group_ *
+                        concurrent_split_groups_);
+    }
+
+    if (num_ungrouped_drivers_ > 0) {
+        std::vector<std::shared_ptr<Driver>> drivers =
+            CreateDriversLocked(kUngroupedGroupId);
+
+        if (drivers_.empty()) {
+            drivers_ = std::move(drivers);
+        } else {
+            drivers_.reserve(drivers_.size() + num_ungrouped_drivers_);
+            for (auto& driver : drivers) {
+                drivers_.emplace_back(std::move(driver));
+            }
+        }
+
+        // Start ungrouped drivers
+        for (auto it = drivers_.end() - num_ungrouped_drivers_;
+             it != drivers_.end();
+             it++) {
+            if (*it) {
+                ++num_running_drivers_;
+                Driver::Enqueue(*it);
+            }
+        }
+    }
+
+    if (num_drivers_per_split_group_ > 0) {
+        ProcessSplitGroupsDriversLocked();
+    }
+}
+
+void
+Task::ProcessSplitGroupsDriversLocked() {
+}
+
+std::vector<std::shared_ptr<Driver>>
+Task::CreateDriversLocked(uint32_t split_group_id) {
     const bool is_group_execution_drivers =
         (split_group_id != kUngroupedGroupId);
     const auto num_pipelines = driver_factories_.size();
 
+    auto self = shared_from_this();
+    std::vector<std::shared_ptr<Driver>> out;
     for (auto pipeline = 0; pipeline < num_pipelines; ++pipeline) {
         auto& factory = driver_factories_[pipeline];
 
@@ -127,11 +306,46 @@ Task::CreateDriversLocked(std::shared_ptr<Task>& self,
                 }));
         }
     }
+    return out;
 }
 
-void
+ContinueFuture
 Task::Terminate(TaskState state) {
+    EventCompletedNotifier completed_notifier;
+    std::vector<std::shared_ptr<Driver>> off_thread_drivers;
+    if (!IsRunningLocked()) {
+        return MakeFinishFutureLocked("Task::Terminate");
+    }
+    state_ = state;
+    if (state_ == TaskState::kCanceled || state_ == TaskState::kAborted) {
+        try {
+            throw ExecTaskException(state_ == TaskState::kCanceled
+                                        ? "Task Cancelled"
+                                        : "Task Aborted");
+        } catch (const std::exception&) {
+            exception_ = std::current_exception();
+        }
+    }
+
+    LOG_INFO(
+        "Terminating task {} with state {}", taskid_, TaskStateToString(state));
+
+    completed_notifier.Activate(std::move(task_completed_promises_));
+
+    terminate_requested_ = true;
+
     for (auto& driver : drivers_) {
+        if (driver) {
+            if (EnterForTerminateLocked(driver->state()) ==
+                StopReason::kTerminate) {
+                off_thread_drivers.push_back(std::move(driver));
+                DriverClosedLocked();
+            }
+        }
+    }
+    completed_notifier.Notify();
+
+    for (auto& driver : off_thread_drivers) {
         driver->CloseByTask();
     }
 }
@@ -147,10 +361,10 @@ Task::Next(ContinueFuture* future) {
                "Task has already finished processing.");
 
     if (driver_factories_.empty()) {
-        AssertInfo(
-            consumer_supplier_ == nullptr,
-            "Single-threaded execution doesn't support delivering results to a "
-            "callback");
+        AssertInfo(consumer_supplier_ == nullptr,
+                   "Single-threaded execution doesn't support delivering "
+                   "results to a "
+                   "callback");
 
         LocalPlanner::Plan(plan_fragment_,
                            nullptr,
@@ -165,10 +379,8 @@ Task::Next(ContinueFuture* future) {
         }
 
         auto self = shared_from_this();
-        std::vector<std::shared_ptr<Driver>> drivers;
-
-        drivers.reserve(num_ungrouped_drivers_);
-        CreateDriversLocked(self, kUngroupedGroupId, drivers);
+        std::vector<std::shared_ptr<Driver>> drivers =
+            CreateDriversLocked(kUngroupedGroupId);
 
         drivers_ = std::move(drivers);
     }
