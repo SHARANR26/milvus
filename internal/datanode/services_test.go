@@ -172,12 +172,11 @@ func (s *DataNodeServicesSuite) TestGetComponentStates() {
 func (s *DataNodeServicesSuite) TestGetCompactionState() {
 	s.Run("success", func() {
 		mockC := compaction.NewMockCompactor(s.T())
-		mockC.EXPECT().GetPlanID().Return(int64(3))
+		s.node.compactionExecutor.executing.Insert(int64(3), mockC)
 
 		mockC2 := compaction.NewMockCompactor(s.T())
-		mockC2.EXPECT().GetPlanID().Return(int64(2))
-		s.node.compactionExecutor.executing.Insert(int64(3), mockC)
 		s.node.compactionExecutor.executing.Insert(int64(2), mockC2)
+
 		s.node.compactionExecutor.completed.Insert(int64(1), &datapb.CompactionPlanResult{
 			PlanID: 1,
 			State:  commonpb.CompactionState_Completed,
@@ -185,9 +184,16 @@ func (s *DataNodeServicesSuite) TestGetCompactionState() {
 				{SegmentID: 10},
 			},
 		})
+
+		s.node.compactionExecutor.completed.Insert(int64(4), &datapb.CompactionPlanResult{
+			PlanID: 4,
+			Type:   datapb.CompactionType_Level0DeleteCompaction,
+			State:  commonpb.CompactionState_Completed,
+		})
+
 		stat, err := s.node.GetCompactionState(s.ctx, nil)
 		s.Assert().NoError(err)
-		s.Assert().Equal(3, len(stat.GetResults()))
+		s.Assert().Equal(4, len(stat.GetResults()))
 
 		var mu sync.RWMutex
 		cnt := 0
@@ -199,7 +205,7 @@ func (s *DataNodeServicesSuite) TestGetCompactionState() {
 			}
 		}
 		mu.Lock()
-		s.Assert().Equal(1, cnt)
+		s.Assert().Equal(2, cnt)
 		mu.Unlock()
 
 		s.Assert().Equal(1, s.node.compactionExecutor.completed.Len())
