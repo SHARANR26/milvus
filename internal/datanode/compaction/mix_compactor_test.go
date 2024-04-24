@@ -256,10 +256,10 @@ func (s *MixCompactionTaskSuite) TestMergeEntityExpired() {
 	currTs := tsoutil.ComposeTSByTime(getMilvusBirthday().Add(time.Second*(time.Duration(collTTL)+1)), 0)
 	s.task.currentTs = currTs
 	s.task.plan.CollectionTtl = int64(collTTL)
+	s.mockAlloc.EXPECT().Alloc(mock.Anything).Return(888888, 999999, nil)
 
 	kvs, _, err := s.task.serializeWrite(context.TODO(), s.segBuf)
 	s.Require().NoError(err)
-
 	s.mockAlloc.EXPECT().AllocOne().Return(888888, nil)
 	s.mockBinlogIO.EXPECT().Download(mock.Anything, mock.Anything).RunAndReturn(
 		func(ctx context.Context, paths []string) ([][]byte, error) {
@@ -290,6 +290,7 @@ func (s *MixCompactionTaskSuite) TestMergeNoExpiration() {
 		{"deleted pk=4", map[interface{}]uint64{int64(4): deleteTs}, 0},
 	}
 
+	s.mockAlloc.EXPECT().Alloc(mock.Anything).Return(888888, 999999, nil)
 	kvs, _, err := s.task.serializeWrite(context.TODO(), s.segBuf)
 	s.Require().NoError(err)
 	for _, test := range tests {
