@@ -277,11 +277,11 @@ func (t *mixCompactionTask) merge(
 	uploadTimeCost := time.Duration(0)
 
 	for _, paths := range binlogPaths {
+		log := log.With(zap.Strings("paths", paths))
 		downloadStart := time.Now()
 		allValues, err := t.binlogIO.Download(ctx, paths)
 		if err != nil {
-			log.Warn("compact wrong, fail to download insertLogs",
-				zap.Strings("path", paths), zap.Error(err))
+			log.Warn("compact wrong, fail to download insertLogs", zap.Error(err))
 		}
 		downloadTimeCost += time.Since(downloadStart)
 
@@ -291,8 +291,7 @@ func (t *mixCompactionTask) merge(
 
 		iter, err := storage.NewBinlogDeserializeReader(blobs, buffer.GetPkID())
 		if err != nil {
-			log.Warn("compact wrong, failed to new insert binlogs reader",
-				zap.Strings("path", paths), zap.Error(err))
+			log.Warn("compact wrong, failed to new insert binlogs reader", zap.Error(err))
 			return nil, err
 		}
 
@@ -302,9 +301,8 @@ func (t *mixCompactionTask) merge(
 				if err == sio.EOF {
 					break
 				} else {
-					log.Warn("compact wrong, failed to iter through data",
-						zap.Strings("path", paths))
-					return nil, errors.New("unexpected error")
+					log.Warn("compact wrong, failed to iter through data", zap.Error(err))
+					return nil, err
 				}
 			}
 			v := iter.Value()
@@ -320,15 +318,13 @@ func (t *mixCompactionTask) merge(
 
 			row, ok := v.Value.(map[typeutil.UniqueID]interface{})
 			if !ok {
-				log.Warn("compact wrong, failed to transfer interface to map",
-					zap.Strings("path", paths))
-				return nil, errors.New("unexpected error")
+				log.Warn("compact wrong, failed to transfer interface to map")
+				return nil, errors.New("unexpected error, failed to transfer interface to map")
 			}
 
 			err = buffer.BufferRow(row, v.PK, uint64(v.Timestamp))
 			if err != nil {
-				log.Warn("compact wrong, failed to buffer row",
-					zap.Strings("path", paths), zap.Error(err))
+				log.Warn("compact wrong, failed to buffer row", zap.Error(err))
 				return nil, err
 			}
 			remainingRowCount++
@@ -337,8 +333,7 @@ func (t *mixCompactionTask) merge(
 				serWriteStart := time.Now()
 				kvs, partialBinlogs, err := t.serializeWrite(ctx, buffer)
 				if err != nil {
-					log.Warn("compact wrong, failed to serialize write buffer",
-						zap.Strings("path", paths), zap.Error(err))
+					log.Warn("compact wrong, failed to serialize write buffer", zap.Error(err))
 					return nil, err
 				}
 				serWriteTimeCost += time.Since(serWriteStart)

@@ -100,6 +100,8 @@ func NewSegmentInsertBuffer(sch *schemapb.CollectionSchema, maxCount int64, segI
 		return nil, err
 	}
 
+	ibuffer.sizeLimit = paramtable.Get().DataNodeCfg.BinLogMaxSize.GetAsInt64()
+
 	var pkField *schemapb.FieldSchema
 	for _, fs := range sch.GetFields() {
 		if fs.GetIsPrimaryKey() && fs.GetFieldID() >= 100 && typeutil.IsPrimaryFieldType(fs.GetDataType()) {

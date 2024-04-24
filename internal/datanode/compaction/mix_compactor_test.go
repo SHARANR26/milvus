@@ -249,6 +249,36 @@ func (s *MixCompactionTaskSuite) TestCompactTwoToOne() {
 	s.Empty(segment.Deltalogs)
 }
 
+func (s *MixCompactionTaskSuite) TestMergeBufferFull() {
+	paramtable.Get().Save(paramtable.Get().DataNodeCfg.BinLogMaxSize.Key, "1")
+	defer paramtable.Get().Reset(paramtable.Get().DataNodeCfg.BinLogMaxSize.Key)
+
+	s.initSegBuffer(5)
+	row := getRow(100)
+	err := s.segBuf.BufferRow(row, storage.NewInt64PrimaryKey(100), tsoutil.ComposeTSByTime(getMilvusBirthday(), 0))
+	s.Require().NoError(err)
+
+	s.mockAlloc.EXPECT().Alloc(mock.Anything).Return(888888, 999999, nil).Times(3)
+	kvs, _, err := s.task.serializeWrite(context.TODO(), s.segBuf)
+	s.Require().NoError(err)
+
+	s.mockAlloc.EXPECT().AllocOne().Return(888888, nil)
+	s.mockBinlogIO.EXPECT().Download(mock.Anything, mock.Anything).RunAndReturn(
+		func(ctx context.Context, paths []string) ([][]byte, error) {
+			s.Require().Equal(len(paths), len(kvs))
+			return lo.Values(kvs), nil
+		})
+	s.mockBinlogIO.EXPECT().Upload(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	segInsertBuffer, err := writebuffer.NewSegmentInsertBuffer(s.meta.GetSchema(), 100, 19530, PartitionID, CollectionID)
+	s.Require().NoError(err)
+
+	compactionSegment, err := s.task.merge(s.task.ctx, [][]string{lo.Keys(kvs)}, nil, segInsertBuffer)
+	s.NoError(err)
+	s.NotNil(compactionSegment)
+	s.EqualValues(2, compactionSegment.GetNumOfRows())
+}
+
 func (s *MixCompactionTaskSuite) TestMergeEntityExpired() {
 	s.initSegBuffer(3)
 	// entityTs == tsoutil.ComposeTSByTime(milvusBirthday, 0)
