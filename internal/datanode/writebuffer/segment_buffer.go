@@ -76,6 +76,14 @@ type TimeRange struct {
 	timestampMax typeutil.Timestamp
 }
 
+func (tr *TimeRange) GetMinTimestamp() typeutil.Timestamp {
+	return tr.timestampMin
+}
+
+func (tr *TimeRange) GetMaxTimestamp() typeutil.Timestamp {
+	return tr.timestampMax
+}
+
 func (tr *TimeRange) Merge(other *TimeRange) {
 	if other.timestampMin < tr.timestampMin {
 		tr.timestampMin = other.timestampMin

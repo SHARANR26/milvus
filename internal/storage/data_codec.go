@@ -74,6 +74,16 @@ type Blob struct {
 	RowNum int64
 }
 
+// GetKey returns the key of blob
+func (b Blob) GetKey() string {
+	return b.Key
+}
+
+// GetValue returns the value of blob
+func (b Blob) GetValue() []byte {
+	return b.Value
+}
+
 // BlobList implements sort.Interface for a list of Blob
 type BlobList []*Blob
 
@@ -98,16 +108,6 @@ func (s BlobList) Less(i, j int) bool {
 // Swap implements Swap in sort.Interface
 func (s BlobList) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
-}
-
-// GetKey returns the key of blob
-func (b Blob) GetKey() string {
-	return b.Key
-}
-
-// GetValue returns the value of blob
-func (b Blob) GetValue() []byte {
-	return b.Value
 }
 
 // InsertCodec serializes and deserializes the insert data

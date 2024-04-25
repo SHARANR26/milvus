@@ -61,7 +61,7 @@ func (s *LevelZeroCompactionTaskSuite) SetupTest() {
 	s.mockBinlogIO = io.NewMockBinlogIO(s.T())
 	s.mockMeta = metacache.NewMockMetaCache(s.T())
 	// plan of the task is unset
-	s.task = newLevelZeroCompactionTask(context.Background(), s.mockBinlogIO, s.mockAlloc, s.mockMeta, nil, nil)
+	s.task = newLevelZeroCompactionTask(context.Background(), s.mockBinlogIO, s.mockAlloc, s.mockMeta, nil)
 
 	pk2ts := map[int64]uint64{
 		1: 20000,
@@ -222,9 +222,9 @@ func (s *LevelZeroCompactionTaskSuite) TestCompactLinear() {
 		}).Times(2)
 	s.mockBinlogIO.EXPECT().Upload(mock.Anything, mock.Anything).Return(nil).Times(2)
 
-	s.Require().Equal(plan.GetPlanID(), s.task.getPlanID())
-	s.Require().Equal(plan.GetChannel(), s.task.getChannelName())
-	s.Require().EqualValues(1, s.task.getCollection())
+	s.Require().Equal(plan.GetPlanID(), s.task.GetPlanID())
+	s.Require().Equal(plan.GetChannel(), s.task.GetChannelName())
+	s.Require().EqualValues(1, s.task.GetCollection())
 
 	l0Segments := lo.Filter(s.task.plan.GetSegmentBinlogs(), func(s *datapb.CompactionSegmentBinlogs, _ int) bool {
 		return s.Level == datapb.SegmentLevel_L0
