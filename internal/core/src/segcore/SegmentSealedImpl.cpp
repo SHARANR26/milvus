@@ -400,9 +400,6 @@ SegmentSealedImpl::LoadFieldData(FieldId field_id, FieldDataInfo& data) {
                     FieldDataPtr field_data;
                     while (data.channel->pop(field_data)) {
                         var_column->Append(std::move(field_data));
-                        var_column->AppendValidData(
-                            field_data->ValidData(),
-                            field_data->ValidDataSize());
                     }
                     var_column->Seal();
                     field_data_size = var_column->ByteSize();
@@ -418,9 +415,6 @@ SegmentSealedImpl::LoadFieldData(FieldId field_id, FieldDataInfo& data) {
                     FieldDataPtr field_data;
                     while (data.channel->pop(field_data)) {
                         var_column->Append(std::move(field_data));
-                        var_column->AppendValidData(
-                            field_data->ValidData(),
-                            field_data->ValidDataSize());
                     }
                     var_column->Seal();
                     stats_.mem_size += var_column->ByteSize();
@@ -445,9 +439,6 @@ SegmentSealedImpl::LoadFieldData(FieldId field_id, FieldDataInfo& data) {
                             stats_.mem_size +=
                                 array->byte_size() + sizeof(uint64_t);
                         }
-                        var_column->AppendValidData(
-                            field_data->ValidData(),
-                            field_data->ValidDataSize());
                     }
                     var_column->Seal();
                     column = std::move(var_column);
@@ -477,7 +468,6 @@ SegmentSealedImpl::LoadFieldData(FieldId field_id, FieldDataInfo& data) {
             FieldDataPtr field_data;
             while (data.channel->pop(field_data)) {
                 column->AppendBatch(field_data);
-
                 stats_.mem_size += field_data->Size();
             }
             LoadPrimitiveSkipIndex(
