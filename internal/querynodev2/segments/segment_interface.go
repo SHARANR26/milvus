@@ -99,4 +99,8 @@ type Segment interface {
 	RetrieveByOffsets(ctx context.Context, plan *RetrievePlan, offsets []int64) (*segcorepb.RetrieveResults, error)
 	IsLazyLoad() bool
 	ResetIndexesLazyLoad(lazyState bool)
+
+	// lazy load related
+	NeedUpdatedVersion() int64
+	RemoveUnusedFieldFiles() error
 }
