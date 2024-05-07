@@ -19,11 +19,9 @@ package segments
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus/internal/proto/internalpb"
@@ -33,6 +31,7 @@ import (
 	"github.com/milvus-io/milvus/internal/util/streamrpc"
 	"github.com/milvus-io/milvus/pkg/log"
 	"github.com/milvus-io/milvus/pkg/metrics"
+	"github.com/milvus-io/milvus/pkg/util/conc"
 	"github.com/milvus-io/milvus/pkg/util/merr"
 	"github.com/milvus-io/milvus/pkg/util/paramtable"
 	"github.com/milvus-io/milvus/pkg/util/timerecord"
@@ -46,7 +45,10 @@ func retrieveOnSegments(ctx context.Context, mgr *Manager, segments []Segment, s
 		result  *segcorepb.RetrieveResults
 		segment Segment
 	}
-	resultCh := make(chan segmentResult, len(segments))
+	var (
+		futures  = make([]*conc.Future[any], 0, len(segments))
+		resultCh = make(chan segmentResult, len(segments))
+	)
 
 	plan.ignoreNonPk = len(segments) > 1 && req.GetReq().GetLimit() != typeutil.Unlimited && plan.ShouldIgnoreNonPk()
 
@@ -70,14 +72,12 @@ func retrieveOnSegments(ctx context.Context, mgr *Manager, segments []Segment, s
 		return nil
 	}
 
-	errGroup, ctx := errgroup.WithContext(ctx)
 	for _, segment := range segments {
 		seg := segment
-		errGroup.Go(func() error {
+		future := GetSQPool().Submit(func() (any, error) {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return ctx.Err(), ctx.Err()
 			}
-
 			// record search time and cache miss
 			var err error
 			accessRecord := metricsutil.NewQuerySegmentAccessRecord(getSegmentMetricLabel(seg))
@@ -89,19 +89,21 @@ func retrieveOnSegments(ctx context.Context, mgr *Manager, segments []Segment, s
 				var timeout time.Duration
 				timeout, err = lazyloadWaitTimeout(ctx)
 				if err != nil {
-					return err
+					return err, err
 				}
 				var missing bool
 				missing, err = mgr.DiskCache.DoWait(ctx, seg.ID(), timeout, retriever)
 				if missing {
 					accessRecord.CacheMissing()
 				}
-				return err
+				return err, err
 			}
-			return retriever(ctx, seg)
+			err = retriever(ctx, seg)
+			return err, err
 		})
+		futures = append(futures, future)
 	}
-	err := errGroup.Wait()
+	err := conc.AwaitAll(futures...)
 	close(resultCh)
 
 	if err != nil {
@@ -119,25 +121,20 @@ func retrieveOnSegments(ctx context.Context, mgr *Manager, segments []Segment, s
 }
 
 func retrieveOnSegmentsWithStream(ctx context.Context, segments []Segment, segType SegmentType, plan *RetrievePlan, svr streamrpc.QueryStreamServer) error {
-	var (
-		errs = make([]error, len(segments))
-		wg   sync.WaitGroup
-	)
+	futures := make([]*conc.Future[any], 0, len(segments))
 
 	label := metrics.SealedSegmentLabel
 	if segType == commonpb.SegmentState_Growing {
 		label = metrics.GrowingSegmentLabel
 	}
 
-	for i, segment := range segments {
-		wg.Add(1)
-		go func(segment Segment, i int) {
-			defer wg.Done()
+	for _, segment := range segments {
+		segment := segment
+		future := GetSQPool().Submit(func() (any, error) {
 			tr := timerecord.NewTimeRecorder("retrieveOnSegmentsWithStream")
 			result, err := segment.Retrieve(ctx, plan)
 			if err != nil {
-				errs[i] = err
-				return
+				return err, err
 			}
 
 			if len(result.GetOffset()) != 0 {
@@ -150,17 +147,17 @@ func retrieveOnSegmentsWithStream(ctx context.Context, segments []Segment, segTy
 					},
 					AllRetrieveCount: result.GetAllRetrieveCount(),
 				}); err != nil {
-					errs[i] = err
+					return err, err
 				}
 			}
 
-			errs[i] = nil
 			metrics.QueryNodeSQSegmentLatency.WithLabelValues(fmt.Sprint(paramtable.GetNodeID()),
 				metrics.QueryLabel, label).Observe(float64(tr.ElapseSpan().Milliseconds()))
-		}(segment, i)
+			return nil, nil
+		})
+		futures = append(futures, future)
 	}
-	wg.Wait()
-	return merr.Combine(errs...)
+	return conc.AwaitAll(futures...)
 }
 
 // retrieve will retrieve all the validate target segments

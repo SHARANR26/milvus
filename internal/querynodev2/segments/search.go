@@ -31,6 +31,7 @@ import (
 	"github.com/milvus-io/milvus/internal/querynodev2/segments/metricsutil"
 	"github.com/milvus-io/milvus/pkg/log"
 	"github.com/milvus-io/milvus/pkg/metrics"
+	"github.com/milvus-io/milvus/pkg/util/conc"
 	"github.com/milvus-io/milvus/pkg/util/merr"
 	"github.com/milvus-io/milvus/pkg/util/paramtable"
 	"github.com/milvus-io/milvus/pkg/util/timerecord"
@@ -39,12 +40,20 @@ import (
 // searchOnSegments performs search on listed segments
 // all segment ids are validated before calling this function
 func searchSegments(ctx context.Context, mgr *Manager, segments []Segment, segType SegmentType, searchReq *SearchRequest) ([]*SearchResult, error) {
+	var (
+		// results variables
+		futures  = make([]*conc.Future[any], 0, len(segments))
+		resultCh = make(chan *SearchResult, len(segments))
+
+		// For log only
+		segmentsWithoutIndex []int64
+	)
+
 	searchLabel := metrics.SealedSegmentLabel
 	if segType == commonpb.SegmentState_Growing {
 		searchLabel = metrics.GrowingSegmentLabel
 	}
 
-	resultCh := make(chan *SearchResult, len(segments))
 	searcher := func(ctx context.Context, s Segment) error {
 		// record search time
 		tr := timerecord.NewTimeRecorder("searchOnSegments")
@@ -63,16 +72,14 @@ func searchSegments(ctx context.Context, mgr *Manager, segments []Segment, segTy
 	}
 
 	// calling segment search in goroutines
-	errGroup, ctx := errgroup.WithContext(ctx)
-	segmentsWithoutIndex := make([]int64, 0)
 	for _, segment := range segments {
 		seg := segment
 		if !seg.ExistIndex(searchReq.searchFieldID) {
 			segmentsWithoutIndex = append(segmentsWithoutIndex, seg.ID())
 		}
-		errGroup.Go(func() error {
+		future := GetSQPool().Submit(func() (any, error) {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return ctx.Err(), ctx.Err()
 			}
 
 			var err error
@@ -85,19 +92,21 @@ func searchSegments(ctx context.Context, mgr *Manager, segments []Segment, segTy
 				var timeout time.Duration
 				timeout, err = lazyloadWaitTimeout(ctx)
 				if err != nil {
-					return err
+					return err, err
 				}
 				var missing bool
 				missing, err = mgr.DiskCache.DoWait(ctx, seg.ID(), timeout, searcher)
 				if missing {
 					accessRecord.CacheMissing()
 				}
-				return err
+				return err, err
 			}
-			return searcher(ctx, seg)
+			err = searcher(ctx, seg)
+			return err, err
 		})
+		futures = append(futures, future)
 	}
-	err := errGroup.Wait()
+	err := conc.AwaitAll(futures...)
 	close(resultCh)
 
 	searchResults := make([]*SearchResult, 0, len(segments))
