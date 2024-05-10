@@ -1142,7 +1142,7 @@ func checkFieldsDataBySchema(schema *schemapb.CollectionSchema, insertMsg *msgst
 			return merr.WrapErrParameterInvalidMsg("only primary key could be with AutoID enabled")
 		}
 
-		if !fieldSchema.AutoID || Params.ProxyCfg.SkipAutoIDCheck.GetAsBool() {
+		if !fieldSchema.AutoID {
 			requiredFieldsNum++
 		}
 
@@ -1157,8 +1157,8 @@ func checkFieldsDataBySchema(schema *schemapb.CollectionSchema, insertMsg *msgst
 			zap.String("collection", schema.GetName()))
 		return merr.WrapErrParameterInvalidMsg("more than 1 primary keys not supported, got %d", primaryKeyNum)
 	}
-	// in upsert, must assign pk when autoid == true
-	if !inInsert {
+	// in upsert or skip autoid check, must assign pk when autoid == true
+	if !inInsert || Params.ProxyCfg.SkipAutoIDCheck.GetAsBool() {
 		requiredFieldsNum = len(schema.Fields)
 	}
 
