@@ -111,8 +111,6 @@ type shardDelegator struct {
 	tsafeManager   tsafe.Manager
 	pkOracle       pkoracle.PkOracle
 	level0Mut      sync.RWMutex
-	// TODO, there is not reason we want to cache L0Deletions, it also
-	level0Deletions map[int64]*storage.DeleteData // partitionID -> deletions
 	// stream delete buffer
 	deleteMut    sync.RWMutex
 	deleteBuffer deletebuffer.DeleteBuffer[*deletebuffer.Item]
@@ -877,7 +875,6 @@ func NewShardDelegator(ctx context.Context, collectionID UniqueID, replicaID Uni
 		workerManager:    workerManager,
 		lifetime:         lifetime.NewLifetime(lifetime.Initializing),
 		distribution:     NewDistribution(),
-		level0Deletions:  make(map[int64]*storage.DeleteData),
 		deleteBuffer:     deletebuffer.NewListDeleteBuffer[*deletebuffer.Item](startTs, sizePerBlock),
 		pkOracle:         pkoracle.NewPkOracle(),
 		tsafeManager:     tsafeManager,
