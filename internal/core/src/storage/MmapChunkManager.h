@@ -93,9 +93,6 @@ class MmapBlocksHandler {
         mmmap_file_counter_.store(0);
         MmapBlock::Init();
     }
-    ~MmapBlocksHandler() {
-        ClearCache();
-    }
     uint64_t
     GetDiskLimit() {
         return max_disk_limit_;

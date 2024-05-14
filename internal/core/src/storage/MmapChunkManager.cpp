@@ -51,7 +51,6 @@ MmapBlock::MmapBlock(const std::string& file_name,
         LOG_ERROR("Failed to write mmap tmp file");
         return;
     }
-    std::cout << "mmaping: creating mmap block " << file_name_ << std::endl;
     // memory mmaping
     addr_ = static_cast<char*>(
         mmap(nullptr, file_size, kMmapDefaultProt, kMmapDefaultFlags, fd, 0));
