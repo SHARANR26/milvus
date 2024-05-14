@@ -246,26 +246,26 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 		singleData := data.Data[field.FieldID]
 
 		// encode fields
-		writer = NewInsertBinlogWriter(field.DataType, insertCodec.Schema.ID, partitionID, segmentID, field.FieldID)
+		writer = NewInsertBinlogWriter(field.DataType, insertCodec.Schema.ID, partitionID, segmentID, field.FieldID, singleData.GetNullable())
 		var eventWriter *insertEventWriter
 		var err error
 		if typeutil.IsVectorType(field.DataType) {
 			switch field.DataType {
 			case schemapb.DataType_FloatVector:
-				eventWriter, err = writer.NextInsertEventWriter(singleData.(*FloatVectorFieldData).Dim)
+				eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable(), singleData.(*FloatVectorFieldData).Dim)
 			case schemapb.DataType_BinaryVector:
-				eventWriter, err = writer.NextInsertEventWriter(singleData.(*BinaryVectorFieldData).Dim)
+				eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable(), singleData.(*BinaryVectorFieldData).Dim)
 			case schemapb.DataType_Float16Vector:
-				eventWriter, err = writer.NextInsertEventWriter(singleData.(*Float16VectorFieldData).Dim)
+				eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable(), singleData.(*Float16VectorFieldData).Dim)
 			case schemapb.DataType_BFloat16Vector:
-				eventWriter, err = writer.NextInsertEventWriter(singleData.(*BFloat16VectorFieldData).Dim)
+				eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable(), singleData.(*BFloat16VectorFieldData).Dim)
 			case schemapb.DataType_SparseFloatVector:
-				eventWriter, err = writer.NextInsertEventWriter()
+				eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable())
 			default:
 				return nil, fmt.Errorf("undefined data type %d", field.DataType)
 			}
 		} else {
-			eventWriter, err = writer.NextInsertEventWriter()
+			eventWriter, err = writer.NextInsertEventWriter(singleData.GetNullable())
 		}
 		if err != nil {
 			writer.Close()
@@ -275,7 +275,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 		eventWriter.SetEventTimestamp(startTs, endTs)
 		switch field.DataType {
 		case schemapb.DataType_Bool:
-			err = eventWriter.AddBoolToPayload(singleData.(*BoolFieldData).Data)
+			err = eventWriter.AddBoolToPayload(singleData.(*BoolFieldData).Data, singleData.(*BoolFieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -283,7 +283,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*BoolFieldData).GetMemorySize()))
 		case schemapb.DataType_Int8:
-			err = eventWriter.AddInt8ToPayload(singleData.(*Int8FieldData).Data)
+			err = eventWriter.AddInt8ToPayload(singleData.(*Int8FieldData).Data, singleData.(*Int8FieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -291,7 +291,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*Int8FieldData).GetMemorySize()))
 		case schemapb.DataType_Int16:
-			err = eventWriter.AddInt16ToPayload(singleData.(*Int16FieldData).Data)
+			err = eventWriter.AddInt16ToPayload(singleData.(*Int16FieldData).Data, singleData.(*Int16FieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -299,7 +299,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*Int16FieldData).GetMemorySize()))
 		case schemapb.DataType_Int32:
-			err = eventWriter.AddInt32ToPayload(singleData.(*Int32FieldData).Data)
+			err = eventWriter.AddInt32ToPayload(singleData.(*Int32FieldData).Data, singleData.(*Int32FieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -307,7 +307,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*Int32FieldData).GetMemorySize()))
 		case schemapb.DataType_Int64:
-			err = eventWriter.AddInt64ToPayload(singleData.(*Int64FieldData).Data)
+			err = eventWriter.AddInt64ToPayload(singleData.(*Int64FieldData).Data, singleData.(*Int64FieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -315,7 +315,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*Int64FieldData).GetMemorySize()))
 		case schemapb.DataType_Float:
-			err = eventWriter.AddFloatToPayload(singleData.(*FloatFieldData).Data)
+			err = eventWriter.AddFloatToPayload(singleData.(*FloatFieldData).Data, singleData.(*FloatFieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -323,7 +323,7 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*FloatFieldData).GetMemorySize()))
 		case schemapb.DataType_Double:
-			err = eventWriter.AddDoubleToPayload(singleData.(*DoubleFieldData).Data)
+			err = eventWriter.AddDoubleToPayload(singleData.(*DoubleFieldData).Data, singleData.(*DoubleFieldData).ValidData)
 			if err != nil {
 				eventWriter.Close()
 				writer.Close()
@@ -331,8 +331,12 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*DoubleFieldData).GetMemorySize()))
 		case schemapb.DataType_String, schemapb.DataType_VarChar:
-			for _, singleString := range singleData.(*StringFieldData).Data {
-				err = eventWriter.AddOneStringToPayload(singleString)
+			for i, singleString := range singleData.(*StringFieldData).Data {
+				isValid := true
+				if len(singleData.(*StringFieldData).ValidData) != 0 {
+					isValid = singleData.(*StringFieldData).ValidData[i]
+				}
+				err = eventWriter.AddOneStringToPayload(singleString, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -341,8 +345,12 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*StringFieldData).GetMemorySize()))
 		case schemapb.DataType_Array:
-			for _, singleArray := range singleData.(*ArrayFieldData).Data {
-				err = eventWriter.AddOneArrayToPayload(singleArray)
+			for i, singleArray := range singleData.(*ArrayFieldData).Data {
+				isValid := true
+				if len(singleData.(*ArrayFieldData).ValidData) != 0 {
+					isValid = singleData.(*ArrayFieldData).ValidData[i]
+				}
+				err = eventWriter.AddOneArrayToPayload(singleArray, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -351,8 +359,12 @@ func (insertCodec *InsertCodec) Serialize(partitionID UniqueID, segmentID Unique
 			}
 			writer.AddExtra(originalSizeKey, fmt.Sprintf("%v", singleData.(*ArrayFieldData).GetMemorySize()))
 		case schemapb.DataType_JSON:
-			for _, singleJSON := range singleData.(*JSONFieldData).Data {
-				err = eventWriter.AddOneJSONToPayload(singleJSON)
+			for i, singleJSON := range singleData.(*JSONFieldData).Data {
+				isValid := true
+				if len(singleData.(*JSONFieldData).ValidData) != 0 {
+					isValid = singleData.(*JSONFieldData).ValidData[i]
+				}
+				err = eventWriter.AddOneJSONToPayload(singleJSON, isValid)
 				if err != nil {
 					eventWriter.Close()
 					writer.Close()
@@ -483,7 +495,7 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 			}
 			switch dataType {
 			case schemapb.DataType_Bool:
-				singleData, err := eventReader.GetBoolFromPayload()
+				singleData, validData, err := eventReader.GetBoolFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -498,11 +510,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				boolFieldData := insertData.Data[fieldID].(*BoolFieldData)
 
 				boolFieldData.Data = append(boolFieldData.Data, singleData...)
+				boolFieldData.ValidData = append(boolFieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = boolFieldData
 
 			case schemapb.DataType_Int8:
-				singleData, err := eventReader.GetInt8FromPayload()
+				singleData, validData, err := eventReader.GetInt8FromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -517,11 +530,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				int8FieldData := insertData.Data[fieldID].(*Int8FieldData)
 
 				int8FieldData.Data = append(int8FieldData.Data, singleData...)
+				int8FieldData.ValidData = append(int8FieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = int8FieldData
 
 			case schemapb.DataType_Int16:
-				singleData, err := eventReader.GetInt16FromPayload()
+				singleData, validData, err := eventReader.GetInt16FromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -536,11 +550,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				int16FieldData := insertData.Data[fieldID].(*Int16FieldData)
 
 				int16FieldData.Data = append(int16FieldData.Data, singleData...)
+				int16FieldData.ValidData = append(int16FieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = int16FieldData
 
 			case schemapb.DataType_Int32:
-				singleData, err := eventReader.GetInt32FromPayload()
+				singleData, validData, err := eventReader.GetInt32FromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -555,11 +570,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				int32FieldData := insertData.Data[fieldID].(*Int32FieldData)
 
 				int32FieldData.Data = append(int32FieldData.Data, singleData...)
+				int32FieldData.ValidData = append(int32FieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = int32FieldData
 
 			case schemapb.DataType_Int64:
-				singleData, err := eventReader.GetInt64FromPayload()
+				singleData, validData, err := eventReader.GetInt64FromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -574,11 +590,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				int64FieldData := insertData.Data[fieldID].(*Int64FieldData)
 
 				int64FieldData.Data = append(int64FieldData.Data, singleData...)
+				int64FieldData.ValidData = append(int64FieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = int64FieldData
 
 			case schemapb.DataType_Float:
-				singleData, err := eventReader.GetFloatFromPayload()
+				singleData, validData, err := eventReader.GetFloatFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -593,11 +610,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				floatFieldData := insertData.Data[fieldID].(*FloatFieldData)
 
 				floatFieldData.Data = append(floatFieldData.Data, singleData...)
+				floatFieldData.ValidData = append(floatFieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = floatFieldData
 
 			case schemapb.DataType_Double:
-				singleData, err := eventReader.GetDoubleFromPayload()
+				singleData, validData, err := eventReader.GetDoubleFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -612,11 +630,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				doubleFieldData := insertData.Data[fieldID].(*DoubleFieldData)
 
 				doubleFieldData.Data = append(doubleFieldData.Data, singleData...)
+				doubleFieldData.ValidData = append(doubleFieldData.ValidData, validData...)
 				totalLength += len(singleData)
 				insertData.Data[fieldID] = doubleFieldData
 
 			case schemapb.DataType_String, schemapb.DataType_VarChar:
-				stringPayload, err := eventReader.GetStringFromPayload()
+				stringPayload, validData, err := eventReader.GetStringFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -629,14 +648,15 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 					}
 				}
 				stringFieldData := insertData.Data[fieldID].(*StringFieldData)
+				stringFieldData.DataType = dataType
 
 				stringFieldData.Data = append(stringFieldData.Data, stringPayload...)
-				stringFieldData.DataType = dataType
+				stringFieldData.ValidData = append(stringFieldData.ValidData, validData...)
 				totalLength += len(stringPayload)
 				insertData.Data[fieldID] = stringFieldData
 
 			case schemapb.DataType_Array:
-				arrayPayload, err := eventReader.GetArrayFromPayload()
+				arrayPayload, validData, err := eventReader.GetArrayFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -651,11 +671,12 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				arrayFieldData := insertData.Data[fieldID].(*ArrayFieldData)
 
 				arrayFieldData.Data = append(arrayFieldData.Data, arrayPayload...)
+				arrayFieldData.ValidData = append(arrayFieldData.ValidData, validData...)
 				totalLength += len(arrayPayload)
 				insertData.Data[fieldID] = arrayFieldData
 
 			case schemapb.DataType_JSON:
-				jsonPayload, err := eventReader.GetJSONFromPayload()
+				jsonPayload, validData, err := eventReader.GetJSONFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -670,6 +691,7 @@ func (insertCodec *InsertCodec) DeserializeInto(fieldBinlogs []*Blob, rowNum int
 				jsonFieldData := insertData.Data[fieldID].(*JSONFieldData)
 
 				jsonFieldData.Data = append(jsonFieldData.Data, jsonPayload...)
+				jsonFieldData.ValidData = append(jsonFieldData.ValidData, validData...)
 				totalLength += len(jsonPayload)
 				insertData.Data[fieldID] = jsonFieldData
 
@@ -994,7 +1016,7 @@ func (deleteCodec *DeleteCodec) Serialize(collectionID UniqueID, partitionID Uni
 		if err != nil {
 			return nil, err
 		}
-		err = eventWriter.AddOneStringToPayload(string(serializedPayload))
+		err = eventWriter.AddOneStringToPayload(string(serializedPayload), true)
 		if err != nil {
 			return nil, err
 		}
@@ -1130,7 +1152,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 	for _, singleTs := range ts {
 		int64Ts = append(int64Ts, int64(singleTs))
 	}
-	err = eventWriter.AddInt64ToPayload(int64Ts)
+	err = eventWriter.AddInt64ToPayload(int64Ts, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1166,7 +1188,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1176,7 +1198,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1186,7 +1208,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1196,7 +1218,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Serialize(ts []Timestamp, ddRequ
 			if err != nil {
 				return nil, err
 			}
-			err = eventWriter.AddOneStringToPayload(req)
+			err = eventWriter.AddOneStringToPayload(req, true)
 			if err != nil {
 				return nil, err
 			}
@@ -1257,7 +1279,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Deserialize(blobs []*Blob) (ts [
 			}
 			switch dataType {
 			case schemapb.DataType_Int64:
-				int64Ts, err := eventReader.GetInt64FromPayload()
+				int64Ts, _, err := eventReader.GetInt64FromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
@@ -1267,7 +1289,7 @@ func (dataDefinitionCodec *DataDefinitionCodec) Deserialize(blobs []*Blob) (ts [
 					resultTs = append(resultTs, Timestamp(singleTs))
 				}
 			case schemapb.DataType_String:
-				stringPayload, err := eventReader.GetStringFromPayload()
+				stringPayload, _, err := eventReader.GetStringFromPayload()
 				if err != nil {
 					eventReader.Close()
 					binlogReader.Close()
