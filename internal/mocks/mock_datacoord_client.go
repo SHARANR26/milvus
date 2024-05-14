@@ -2734,6 +2734,90 @@ func (_c *MockDataCoordClient_ListIndexes_Call) RunAndReturn(run func(context.Co
 	return _c
 }
 
+// CreateIndexesForTemp provides a mock function with given fields: ctx, in, opts
+func (_m *MockDataCoordClient) CreateIndexesForTemp(ctx context.Context, in *indexpb.CollectionWithTempRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	return &commonpb.Status{}, nil
+}
+
+// MockDataCoordClient_CreateIndexesForTemp_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListIndexes'
+type MockDataCoordClient_CreateIndexesForTemp_Call struct {
+	*mock.Call
+}
+
+// ListIndexes is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *indexpb.ListIndexesRequest
+//   - opts ...grpc.CallOption
+func (_e *MockDataCoordClient_Expecter) CreateIndexesForTemp(ctx interface{}, in interface{}, opts ...interface{}) *MockDataCoordClient_CreateIndexesForTemp_Call {
+	return &MockDataCoordClient_CreateIndexesForTemp_Call{Call: _e.mock.On("ListIndexes",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockDataCoordClient_CreateIndexesForTemp_Call) Run(run func(ctx context.Context, in *indexpb.CollectionWithTempRequest, opts ...grpc.CallOption)) *MockDataCoordClient_CreateIndexesForTemp_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		run(args[0].(context.Context), args[1].(*indexpb.CollectionWithTempRequest), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockDataCoordClient_CreateIndexesForTemp_Call) Return(_a0 *commonpb.Status, _a1 error) *MockDataCoordClient_CreateIndexesForTemp_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockDataCoordClient_CreateIndexesForTemp_Call) RunAndReturn(run func(context.Context, *indexpb.CollectionWithTempRequest, ...grpc.CallOption) (*commonpb.Status, error)) *MockDataCoordClient_CreateIndexesForTemp_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DropIndexesForTemp provides a mock function with given fields: ctx, in, opts
+func (_m *MockDataCoordClient) DropIndexesForTemp(ctx context.Context, in *indexpb.CollectionWithTempRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	return &commonpb.Status{}, nil
+}
+
+// MockDataCoordClient_DropIndexesForTemp_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListIndexes'
+type MockDataCoordClient_DropIndexesForTemp_Call struct {
+	*mock.Call
+}
+
+// ListIndexes is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *indexpb.ListIndexesRequest
+//   - opts ...grpc.CallOption
+func (_e *MockDataCoordClient_Expecter) DropIndexesForTemp(ctx interface{}, in interface{}, opts ...interface{}) *MockDataCoordClient_DropIndexesForTemp_Call {
+	return &MockDataCoordClient_DropIndexesForTemp_Call{Call: _e.mock.On("ListIndexes",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockDataCoordClient_DropIndexesForTemp_Call) Run(run func(ctx context.Context, in *indexpb.CollectionWithTempRequest, opts ...grpc.CallOption)) *MockDataCoordClient_DropIndexesForTemp_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		run(args[0].(context.Context), args[1].(*indexpb.CollectionWithTempRequest), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockDataCoordClient_DropIndexesForTemp_Call) Return(_a0 *commonpb.Status, _a1 error) *MockDataCoordClient_DropIndexesForTemp_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockDataCoordClient_DropIndexesForTemp_Call) RunAndReturn(run func(context.Context, *indexpb.CollectionWithTempRequest, ...grpc.CallOption) (*commonpb.Status, error)) *MockDataCoordClient_DropIndexesForTemp_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ManualCompaction provides a mock function with given fields: ctx, in, opts
 func (_m *MockDataCoordClient) ManualCompaction(ctx context.Context, in *milvuspb.ManualCompactionRequest, opts ...grpc.CallOption) (*milvuspb.ManualCompactionResponse, error) {
 	_va := make([]interface{}, len(opts))

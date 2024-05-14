@@ -547,3 +547,20 @@ func (s *simpleStep) Desc() string {
 func (s *simpleStep) Weight() stepPriority {
 	return s.weight
 }
+
+type replaceCollectionWithTempStep struct {
+	baseStep
+	dbName         string
+	collectionName string
+	ts             Timestamp
+}
+
+func (s *replaceCollectionWithTempStep) Execute(ctx context.Context) ([]nestedStep, error) {
+	err := s.core.meta.ReplaceCollectionWithTemp(ctx, s.dbName, s.collectionName, s.ts)
+	return nil, err
+}
+
+func (s *replaceCollectionWithTempStep) Desc() string {
+	return fmt.Sprintf("replace collection with its temp collection, db: %s, collection: %s, ts: %d",
+		s.dbName, s.collectionName, s.ts)
+}

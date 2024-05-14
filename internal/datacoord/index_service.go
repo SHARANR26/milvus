@@ -927,3 +927,88 @@ func (s *Server) ListIndexes(ctx context.Context, req *indexpb.ListIndexesReques
 		IndexInfos: indexInfos,
 	}, nil
 }
+
+// CreateIndexesForTemp returns all indexes created on provided collection.
+func (s *Server) CreateIndexesForTemp(ctx context.Context, req *indexpb.CollectionWithTempRequest) (*commonpb.Status, error) {
+	log := log.Ctx(ctx).With(zap.Int64("collection", req.CollectionID), zap.Int64("tempCollection", req.TempCollectionID))
+	log.Info("receive CopyIndexes to temp collection request")
+	if err := merr.CheckHealthy(s.GetStateCode()); err != nil {
+		log.Warn(msgDataCoordIsUnhealthy(paramtable.GetNodeID()), zap.Error(err))
+		return merr.Status(err), nil
+	}
+	err := s.meta.indexMeta.CreateIndex(&model.Index{
+		CollectionID: req.CollectionID,
+		IndexID:      int64(0),
+		IsDeleted:    true,
+	})
+	if err != nil {
+		log.Error("copy indexes to temp collection fail while create a guard index of target collection", zap.Error(err))
+		metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+	indexes := s.meta.indexMeta.GetIndexesForCollection(req.GetCollectionID(), "")
+	for _, indexInfo := range indexes {
+		indexID, err := s.allocator.allocID(ctx)
+		if err != nil {
+			log.Warn("copy indexes to temp collection fail while alloc indexID for temp collection's index", zap.Error(err))
+			metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+			return merr.Status(err), nil
+		}
+		index := &model.Index{
+			CollectionID:    req.TempCollectionID,
+			FieldID:         indexInfo.FieldID,
+			IndexID:         indexID,
+			IndexName:       indexInfo.IndexName,
+			TypeParams:      indexInfo.TypeParams,
+			IndexParams:     indexInfo.IndexParams,
+			CreateTime:      indexInfo.CreateTime,
+			IsAutoIndex:     indexInfo.IsAutoIndex,
+			UserIndexParams: indexInfo.UserIndexParams,
+		}
+		err = s.meta.indexMeta.CreateIndex(index)
+		if err != nil {
+			log.Error("copy indexes to temp collection fail while create index for temp collection", zap.Error(err))
+			metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+			return merr.Status(err), nil
+		}
+		log.Debug("copy an index to temp collection success", zap.Any("index", index))
+	}
+	return &commonpb.Status{}, nil
+}
+
+// DropIndexesForTemp returns all indexes created on provided collection.
+func (s *Server) DropIndexesForTemp(ctx context.Context, req *indexpb.CollectionWithTempRequest) (*commonpb.Status, error) {
+	log := log.Ctx(ctx).With(zap.Int64("collection", req.CollectionID), zap.Int64("tempCollection", req.TempCollectionID))
+	log.Info("receive DropIndexes of temp collection request")
+	if err := merr.CheckHealthy(s.GetStateCode()); err != nil {
+		log.Warn(msgDataCoordIsUnhealthy(paramtable.GetNodeID()), zap.Error(err))
+		return merr.Status(err), nil
+	}
+	err := s.meta.indexMeta.RemoveIndex(req.GetTempCollectionID(), int64(0))
+	if err != nil {
+		log.Error("drop temp collection's indexes fail while remove the guard index of temp collection", zap.Error(err))
+		metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	indexes := s.meta.indexMeta.GetIndexesForCollection(req.GetTempCollectionID(), "")
+	indexIDs := []int64{}
+	for _, indexInfo := range indexes {
+		indexIDs = append(indexIDs, indexInfo.IndexID)
+	}
+	err = s.meta.indexMeta.MarkIndexAsDeleted(req.GetTempCollectionID(), indexIDs)
+	if err != nil {
+		log.Error("drop temp collection's indexes fail while remove indexes of temp collection", zap.Error(err))
+		metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+	if req.CollectionID != req.TempCollectionID {
+		err := s.meta.indexMeta.RemoveIndex(req.CollectionID, int64(0))
+		if err != nil {
+			log.Error("drop temp collection's indexes fail while remove the guard index of target collection", zap.Error(err))
+			metrics.IndexRequestCounter.WithLabelValues(metrics.FailLabel).Inc()
+			return merr.Status(err), nil
+		}
+	}
+	return &commonpb.Status{}, nil
+}

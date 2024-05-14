@@ -58,6 +58,7 @@ type Broker interface {
 	GcConfirm(ctx context.Context, collectionID, partitionID UniqueID) bool
 
 	DropCollectionIndex(ctx context.Context, collID UniqueID, partIDs []UniqueID) error
+	DropTempCollectionIndexes(ctx context.Context, collID UniqueID, partIDs []UniqueID) error
 	GetSegmentIndexState(ctx context.Context, collID UniqueID, indexName string, segIDs []UniqueID) ([]*indexpb.SegmentIndexState, error)
 	DescribeIndex(ctx context.Context, colID UniqueID) (*indexpb.DescribeIndexResponse, error)
 
@@ -197,6 +198,25 @@ func (b *ServerBroker) DropCollectionIndex(ctx context.Context, collID UniqueID,
 		PartitionIDs: partIDs,
 		IndexName:    "",
 		DropAll:      true,
+	})
+	if err != nil {
+		return err
+	}
+	if rsp.ErrorCode != commonpb.ErrorCode_Success {
+		return fmt.Errorf(rsp.Reason)
+	}
+
+	log.Ctx(ctx).Info("done to drop collection index", zap.Int64("collection", collID), zap.Int64s("partitions", partIDs))
+
+	return nil
+}
+
+func (b *ServerBroker) DropTempCollectionIndexes(ctx context.Context, collID UniqueID, partIDs []UniqueID) error {
+	log.Ctx(ctx).Info("dropping collection index", zap.Int64("collection", collID), zap.Int64s("partitions", partIDs))
+
+	rsp, err := b.s.dataCoord.DropIndexesForTemp(ctx, &indexpb.CollectionWithTempRequest{
+		TempCollectionID: collID,
+		CollectionID:     collID,
 	})
 	if err != nil {
 		return err
