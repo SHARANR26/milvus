@@ -177,13 +177,18 @@ func TestStats(t *testing.T) {
 
 	t.Run("test loader", func(t *testing.T) {
 		size := 10
-		cache := cacheBuilder.WithCapacity(int64(size)).Build()
+		cache := cacheBuilder.WithCapacity(int64(size)).
+			WithFinalizer(func(ctx context.Context, key, value int) error { return nil }).
+			WithReloader(func(ctx context.Context, key int) (int, error) { return 0, nil }).
+			Build()
 		stats := cache.Stats()
+		assert.Zero(t, cache.Size())
+		assert.Equal(t, int64(size), cache.Capacity())
 		assert.Equal(t, uint64(0), stats.HitCount.Load())
 		assert.Equal(t, uint64(0), stats.MissCount.Load())
 		assert.Equal(t, uint64(0), stats.EvictionCount.Load())
-		assert.Equal(t, uint64(0), stats.TotalLoadTimeMs.Load())
-		assert.Equal(t, uint64(0), stats.TotalFinalizeTimeMs.Load())
+		assert.Equal(t, float64(0), stats.TotalLoadDuration.Load())
+		assert.Equal(t, float64(0), stats.TotalFinalizeDuration.Load())
 		assert.Equal(t, uint64(0), stats.LoadSuccessCount.Load())
 		assert.Equal(t, uint64(0), stats.LoadFailCount.Load())
 
@@ -194,11 +199,14 @@ func TestStats(t *testing.T) {
 			})
 			assert.NoError(t, err)
 		}
+		assert.Equal(t, int64(size), cache.Size())
+		assert.Equal(t, int64(size), cache.Capacity())
 		assert.Equal(t, uint64(0), stats.HitCount.Load())
 		assert.Equal(t, uint64(size), stats.MissCount.Load())
 		assert.Equal(t, uint64(0), stats.EvictionCount.Load())
-		// assert.True(t, stats.TotalLoadTimeMs.Load() > 0)
-		assert.Equal(t, uint64(0), stats.TotalFinalizeTimeMs.Load())
+		assert.Greater(t, stats.TotalLoadDuration.Load(), float64(0))
+		assert.Equal(t, float64(0), stats.TotalFinalizeDuration.Load())
+		assert.Equal(t, uint64(0), stats.TotalFinalizeCount.Load())
 		assert.Equal(t, uint64(size), stats.LoadSuccessCount.Load())
 		assert.Equal(t, uint64(0), stats.LoadFailCount.Load())
 
@@ -209,10 +217,13 @@ func TestStats(t *testing.T) {
 			})
 			assert.NoError(t, err)
 		}
+		assert.Equal(t, int64(size), cache.Size())
+		assert.Equal(t, int64(size), cache.Capacity())
 		assert.Equal(t, uint64(size), stats.HitCount.Load())
 		assert.Equal(t, uint64(size), stats.MissCount.Load())
 		assert.Equal(t, uint64(0), stats.EvictionCount.Load())
-		assert.Equal(t, uint64(0), stats.TotalFinalizeTimeMs.Load())
+		assert.Equal(t, float64(0), stats.TotalFinalizeDuration.Load())
+		assert.Equal(t, uint64(0), stats.TotalFinalizeCount.Load())
 		assert.Equal(t, uint64(size), stats.LoadSuccessCount.Load())
 		assert.Equal(t, uint64(0), stats.LoadFailCount.Load())
 
@@ -223,12 +234,26 @@ func TestStats(t *testing.T) {
 			})
 			assert.NoError(t, err)
 		}
+		assert.Equal(t, int64(size), cache.Size())
+		assert.Equal(t, int64(size), cache.Capacity())
 		assert.Equal(t, uint64(size), stats.HitCount.Load())
 		assert.Equal(t, uint64(size*2), stats.MissCount.Load())
 		assert.Equal(t, uint64(size), stats.EvictionCount.Load())
-		// assert.True(t, stats.TotalFinalizeTimeMs.Load() > 0)
+		assert.Greater(t, stats.TotalFinalizeDuration.Load(), float64(0))
+		assert.Greater(t, stats.TotalFinalizeCount.Load(), uint64(0))
 		assert.Equal(t, uint64(size*2), stats.LoadSuccessCount.Load())
 		assert.Equal(t, uint64(0), stats.LoadFailCount.Load())
+		assert.Equal(t, uint64(0), stats.TotalReloadCount.Load())
+		assert.Equal(t, float64(0), stats.TotalReloadDuration.Load())
+
+		cache.MarkItemNeedReload(context.Background(), size+1)
+		cache.Do(context.Background(), size+1, func(_ context.Context, v int) error {
+			return nil
+		})
+		assert.Greater(t, stats.TotalReloadCount.Load(), uint64(0))
+		assert.Greater(t, stats.TotalFinalizeDuration.Load(), float64(0))
+		assert.Equal(t, int64(size), cache.Size())
+		assert.Equal(t, int64(size), cache.Capacity())
 	})
 }
 
