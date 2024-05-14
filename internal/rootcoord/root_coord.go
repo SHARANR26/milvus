@@ -43,8 +43,10 @@ import (
 	kvmetestore "github.com/milvus-io/milvus/internal/metastore/kv/rootcoord"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	pb "github.com/milvus-io/milvus/internal/proto/etcdpb"
+	"github.com/milvus-io/milvus/internal/proto/indexpb"
 	"github.com/milvus-io/milvus/internal/proto/internalpb"
 	"github.com/milvus-io/milvus/internal/proto/proxypb"
+	"github.com/milvus-io/milvus/internal/proto/querypb"
 	"github.com/milvus-io/milvus/internal/proto/rootcoordpb"
 	tso2 "github.com/milvus-io/milvus/internal/tso"
 	"github.com/milvus-io/milvus/internal/types"
@@ -1044,6 +1046,150 @@ func (c *Core) DropCollection(ctx context.Context, in *milvuspb.DropCollectionRe
 
 	log.Ctx(ctx).Info("done to drop collection", zap.String("role", typeutil.RootCoordRole),
 		zap.String("name", in.GetCollectionName()),
+		zap.Uint64("ts", t.GetTs()))
+	return merr.Success(), nil
+}
+
+// TruncateCollection truncate collection
+func (c *Core) TruncateCollection(ctx context.Context, in *rootcoordpb.TruncateCollectionRequest) (*commonpb.Status, error) {
+	if err := merr.CheckHealthy(c.GetStateCode()); err != nil {
+		return merr.Status(err), nil
+	}
+
+	metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.TotalLabel).Inc()
+	tr := timerecord.NewTimeRecorder("TruncateCollection")
+
+	log.Ctx(ctx).Info("received request to drop collection",
+		zap.String("role", typeutil.RootCoordRole),
+		zap.String("dbName", in.GetDbName()),
+		zap.String("name", in.GetCollectionName()))
+
+	if in.Clear {
+		return c.dropCollectionForTemp(ctx, in, nil, true)
+	}
+
+	ct := &copyCollectionTask{
+		baseTask:       newBaseTask(ctx, c),
+		Req:            in,
+		collectionName: util.GenerateTempCollectionName(in.CollectionName),
+	}
+
+	if err := c.scheduler.AddTask(ct); err != nil {
+		log.Ctx(ctx).Info("failed to enqueue request to drop collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err),
+			zap.String("name", in.GetCollectionName()))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	if err := ct.WaitToFinish(); err != nil {
+		log.Ctx(ctx).Info("failed to truncate collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err),
+			zap.String("name", in.GetCollectionName()))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	var err error
+	_, err = c.dataCoord.CreateIndexesForTemp(ctx, &indexpb.CollectionWithTempRequest{
+		CollectionID:     ct.collInfo.CollectionID,
+		TempCollectionID: ct.collectionID,
+	})
+	if err != nil {
+		log.Info("describe collection fail", zap.Error(err), zap.Any("truncateCollectionRequest", in))
+		return &commonpb.Status{
+			ErrorCode: commonpb.ErrorCode_UnexpectedError,
+			Reason:    fmt.Sprintf("describe collection: %s.%s fail", in.DbName, in.CollectionName),
+		}, err
+	}
+
+	if in.NeedLoad {
+		_, err = c.queryCoord.LoadCollection(ctx, &querypb.LoadCollectionRequest{
+			Base: commonpbutil.UpdateMsgBase(
+				in.Base,
+				commonpbutil.WithMsgType(commonpb.MsgType_LoadCollection),
+			),
+			DbID:         0,
+			CollectionID: ct.collectionID,
+		})
+		if err != nil {
+			log.Info("describe collection fail", zap.Error(err), zap.Any("truncateCollectionRequest", in))
+			return &commonpb.Status{
+				ErrorCode: commonpb.ErrorCode_UnexpectedError,
+				Reason:    fmt.Sprintf("describe collection: %s.%s fail", in.DbName, in.CollectionName),
+			}, err
+		}
+	}
+
+	t := &truncateCollectionTask{
+		baseTask: newBaseTask(ctx, c),
+		Req:      in,
+	}
+
+	if err := c.scheduler.AddTask(t); err != nil {
+		log.Ctx(ctx).Info("failed to enqueue request to drop collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err),
+			zap.String("name", in.GetCollectionName()))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	if err := t.WaitToFinish(); err != nil {
+		log.Ctx(ctx).Info("failed to truncate collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err),
+			zap.String("name", in.GetCollectionName()),
+			zap.Uint64("ts", t.GetTs()))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	c.dropCollectionForTemp(ctx, nil, &indexpb.CollectionWithTempRequest{
+		CollectionID:     ct.collectionID,
+		TempCollectionID: ct.collInfo.CollectionID,
+	}, false)
+
+	metrics.RootCoordDDLReqCounter.WithLabelValues("TruncateCollection", metrics.SuccessLabel).Inc()
+	metrics.RootCoordDDLReqLatency.WithLabelValues("TruncateCollection").Observe(float64(tr.ElapseSpan().Milliseconds()))
+	metrics.RootCoordDDLReqLatencyInQueue.WithLabelValues("TruncateCollection").Observe(float64(t.queueDur.Milliseconds()))
+
+	log.Ctx(ctx).Info("done to truncate collection", zap.String("role", typeutil.RootCoordRole),
+		zap.String("name", in.GetCollectionName()),
+		zap.Uint64("ts", t.GetTs()))
+	return merr.Success(), nil
+}
+
+// drop temp collection
+// todo: while start a rootcoord
+func (c *Core) dropCollectionForTemp(ctx context.Context, req *rootcoordpb.TruncateCollectionRequest, in *indexpb.CollectionWithTempRequest, sync bool) (*commonpb.Status, error) {
+	t := &dropTempCollectionTask{
+		baseTask:    newBaseTask(ctx, c),
+		Req:         in,
+		TruncateReq: req,
+		Sync:        sync,
+	}
+
+	if err := c.scheduler.AddTask(t); err != nil {
+		log.Ctx(ctx).Info("failed to enqueue request to drop collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("DropCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	if err := t.WaitToFinish(); err != nil {
+		log.Ctx(ctx).Info("failed to drop collection", zap.String("role", typeutil.RootCoordRole),
+			zap.Error(err),
+			zap.Uint64("ts", t.GetTs()))
+
+		metrics.RootCoordDDLReqCounter.WithLabelValues("DropCollection", metrics.FailLabel).Inc()
+		return merr.Status(err), nil
+	}
+
+	log.Ctx(ctx).Info("done to drop collection", zap.String("role", typeutil.RootCoordRole),
 		zap.Uint64("ts", t.GetTs()))
 	return merr.Success(), nil
 }

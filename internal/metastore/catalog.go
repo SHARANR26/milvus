@@ -80,6 +80,8 @@ type RootCoordCatalog interface {
 	// For example []string{"user1/role1"}
 	ListUserRole(ctx context.Context, tenant string) ([]string, error)
 
+	ExchangeCollections(ctx context.Context, collections []*model.Collection, aliases []*model.Alias, ts typeutil.Timestamp) error
+
 	Close()
 }
 

@@ -276,6 +276,12 @@ func (m *indexMeta) CreateIndex(index *model.Index) error {
 	m.Lock()
 	defer m.Unlock()
 
+	if !m.canUpdateCollection(index.CollectionID, -1) {
+		errMsg := "cannot create an index on truncating collection"
+		log.Warn(errMsg, zap.String("indexName", index.IndexName), zap.Int64("collectionID", index.CollectionID))
+		return fmt.Errorf(errMsg+": %d", index.CollectionID)
+	}
+
 	if err := m.catalog.CreateIndex(m.ctx, index); err != nil {
 		log.Error("meta update: CreateIndex save meta fail", zap.Int64("collectionID", index.CollectionID),
 			zap.Int64("fieldID", index.FieldID), zap.Int64("indexID", index.IndexID),
@@ -292,6 +298,14 @@ func (m *indexMeta) CreateIndex(index *model.Index) error {
 func (m *indexMeta) AlterIndex(ctx context.Context, indexes ...*model.Index) error {
 	m.Lock()
 	defer m.Unlock()
+
+	for _, index := range indexes {
+		if !m.canUpdateCollection(index.CollectionID, -1) {
+			errMsg := "cannot alter indexes on truncating collection"
+			log.Warn(errMsg, zap.String("indexName", index.IndexName), zap.Int64("collectionID", index.CollectionID))
+			return fmt.Errorf(errMsg+": %d", index.CollectionID)
+		}
+	}
 
 	err := m.catalog.AlterIndexes(ctx, indexes)
 	if err != nil {
@@ -470,6 +484,11 @@ func (m *indexMeta) MarkIndexAsDeleted(collID UniqueID, indexIDs []UniqueID) err
 	}
 	indexes := make([]*model.Index, 0)
 	for _, indexID := range indexIDs {
+		if !m.canUpdateCollection(collID, -1) {
+			errMsg := "cannot mark an index as deleted on truncating collection"
+			log.Warn(errMsg, zap.Int64("indexID", indexID), zap.Int64("collectionID", collID))
+			return fmt.Errorf(errMsg+": %d", collID)
+		}
 		index, ok := fieldIndexes[indexID]
 		if !ok || index.IsDeleted {
 			continue
@@ -808,6 +827,11 @@ func (m *indexMeta) GetDeletedIndexes() []*model.Index {
 func (m *indexMeta) RemoveIndex(collID, indexID UniqueID) error {
 	m.Lock()
 	defer m.Unlock()
+	if !m.canUpdateCollection(collID, indexID) {
+		errMsg := "cannot remove an index on truncating collection"
+		log.Warn(errMsg, zap.Int64("indexID", indexID), zap.Int64("collectionID", collID))
+		return fmt.Errorf(errMsg+": %d", collID)
+	}
 	log.Info("IndexCoord meta table remove index", zap.Int64("collectionID", collID), zap.Int64("indexID", indexID))
 	err := m.catalog.DropIndex(m.ctx, collID, indexID)
 	if err != nil {
@@ -906,4 +930,15 @@ func (m *indexMeta) GetUnindexedSegments(collectionID int64, segmentIDs []int64)
 		}
 	}
 	return lo.Without(segmentIDs, indexed...)
+}
+
+func (m *indexMeta) canUpdateCollection(collectionID int64, indexID int64) bool {
+	indexes, ok := m.indexes[collectionID]
+	if ok {
+		_, ok := indexes[int64(0)]
+		if ok {
+			return indexID == 0
+		}
+	}
+	return true
 }

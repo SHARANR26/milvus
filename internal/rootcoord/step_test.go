@@ -115,3 +115,18 @@ func TestSkip(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+func TestStep_tempCollection_Execute(t *testing.T) {
+	t.Run("normal case", func(t *testing.T) {
+		meta := newMockMetaTable()
+		core := newTestCore(withMeta(meta))
+		s := replaceCollectionWithTempStep{
+			baseStep:       baseStep{core: core},
+			dbName:         "",
+			collectionName: "test",
+			ts:             0,
+		}
+		_, err := s.Execute(context.TODO())
+		assert.NoError(t, err)
+	})
+}
