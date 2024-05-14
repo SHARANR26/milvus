@@ -348,7 +348,7 @@ func (node *QueryNode) Init() error {
 				return nil, err
 			}
 
-			return cluster.NewRemoteWorker(client), nil
+			return cluster.NewRemoteWorker(client, nodeID), nil
 		})
 		node.delegators = typeutil.NewConcurrentMap[string, delegator.ShardDelegator]()
 		node.subscribingChannels = typeutil.NewConcurrentSet[string]()
