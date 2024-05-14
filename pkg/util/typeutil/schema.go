@@ -17,7 +17,6 @@
 package typeutil
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -1506,9 +1505,27 @@ func SparseFloatRowSetAt(row []byte, pos int, idx uint32, value float32) {
 }
 
 func CreateSparseFloatRow(indices []uint32, values []float32) []byte {
-	row := make([]byte, len(indices)*8)
-	for i := 0; i < len(indices); i++ {
-		SparseFloatRowSetAt(row, i, indices[i], values[i])
+	elemCount := len(indices)
+
+	indexOrder := make([]int, elemCount)
+	for i := range indexOrder {
+		indexOrder[i] = i
+	}
+
+	sort.Slice(indexOrder, func(i, j int) bool {
+		return indices[indexOrder[i]] < indices[indexOrder[j]]
+	})
+
+	sortedIndices := make([]uint32, elemCount)
+	sortedValues := make([]float32, elemCount)
+	for i, index := range indexOrder {
+		sortedIndices[i] = indices[index]
+		sortedValues[i] = values[index]
+	}
+
+	row := make([]byte, elemCount*8)
+	for i := 0; i < elemCount; i++ {
+		SparseFloatRowSetAt(row, i, sortedIndices[i], sortedValues[i])
 	}
 	return row
 }
@@ -1519,60 +1536,57 @@ type sparseFloatVectorJSONRepresentation struct {
 }
 
 // accepted format:
-//   - {"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}
-//   - {"1": 0.1, "2": 0.2, "3": 0.3}
+//   - {"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}    # format1
+//   - {"1": 0.1, "2": 0.2, "3": 0.3}                       # format2
 //
 // we don't require the indices to be sorted from user input, but the returned
 // byte representation must have indices sorted
-func CreateSparseFloatRowFromJSON(input []byte) ([]byte, error) {
+func CreateSparseFloatRowFromJSON(input map[string]interface{}) ([]byte, error) {
 	var indices []uint32
 	var values []float32
 
-	var vec sparseFloatVectorJSONRepresentation
-	decoder := json.NewDecoder(bytes.NewReader(input))
-	decoder.DisallowUnknownFields()
-	err := decoder.Decode(&vec)
-	if err == nil {
-		if len(vec.Indices) != len(vec.Values) {
-			return nil, fmt.Errorf("indices and values length mismatch")
-		}
-		if len(vec.Indices) == 0 {
-			return nil, fmt.Errorf("empty indices/values in JSON input")
-		}
-		indices = vec.Indices
-		values = vec.Values
-	} else {
-		var vec2 map[uint32]float32
-		decoder = json.NewDecoder(bytes.NewReader(input))
-		decoder.DisallowUnknownFields()
-		err = decoder.Decode(&vec2)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse JSON input: %v", err)
-		}
+	if len(input) == 0 {
+		return nil, fmt.Errorf("empty JSON input")
+	}
 
-		for idx, val := range vec2 {
-			indices = append(indices, idx)
-			values = append(values, val)
+	// try format1
+	indices, ok1 := input["indices"].([]uint32)
+	values, ok2 := input["values"].([]float32)
+
+	// try format2
+	if !ok1 && !ok2 {
+		for k, v := range input {
+			idx, err := strconv.ParseUint(k, 0, 32)
+			if err != nil {
+				return nil, err
+			}
+
+			var val float64
+			val, ok := v.(float64)
+			if !ok {
+				num, ok := v.(json.Number)
+				if !ok {
+					return nil, fmt.Errorf("invalid float32 in JSON")
+				}
+				val, err = strconv.ParseFloat(num.String(), 32)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			indices = append(indices, uint32(idx))
+			values = append(values, float32(val))
 		}
 	}
 
-	indexOrder := make([]int, len(indices))
-	for i := range indexOrder {
-		indexOrder[i] = i
+	if len(indices) != len(values) {
+		return nil, fmt.Errorf("indices and values length mismatch")
+	}
+	if len(indices) == 0 {
+		return nil, fmt.Errorf("empty indices/values in JSON input")
 	}
 
-	sort.Slice(indexOrder, func(i, j int) bool {
-		return indices[indexOrder[i]] < indices[indexOrder[j]]
-	})
-
-	sortedIndices := make([]uint32, len(indices))
-	sortedValues := make([]float32, len(values))
-	for i, index := range indexOrder {
-		sortedIndices[i] = indices[index]
-		sortedValues[i] = values[index]
-	}
-
-	row := CreateSparseFloatRow(sortedIndices, sortedValues)
+	row := CreateSparseFloatRow(indices, values)
 	if err := ValidateSparseFloatRows(row); err != nil {
 		return nil, err
 	}
