@@ -41,27 +41,27 @@ const initialTargetVersion = int64(0)
 
 type SegmentChecker struct {
 	*checkerActivation
-	meta      *meta.Meta
-	dist      *meta.DistributionManager
-	targetMgr *meta.TargetManager
-	balancer  balance.Balance
-	nodeMgr   *session.NodeManager
+	meta            *meta.Meta
+	dist            *meta.DistributionManager
+	targetMgr       *meta.TargetManager
+	nodeMgr         *session.NodeManager
+	getBalancerFunc GetBalancerFunc
 }
 
 func NewSegmentChecker(
 	meta *meta.Meta,
 	dist *meta.DistributionManager,
 	targetMgr *meta.TargetManager,
-	balancer balance.Balance,
 	nodeMgr *session.NodeManager,
+	getBalancerFunc GetBalancerFunc,
 ) *SegmentChecker {
 	return &SegmentChecker{
 		checkerActivation: newCheckerActivation(),
 		meta:              meta,
 		dist:              dist,
 		targetMgr:         targetMgr,
-		balancer:          balancer,
 		nodeMgr:           nodeMgr,
+		getBalancerFunc:   getBalancerFunc,
 	}
 }
 
@@ -424,7 +424,7 @@ func (c *SegmentChecker) createSegmentLoadTasks(ctx context.Context, segments []
 				SegmentInfo: s,
 			}
 		})
-		shardPlans := c.balancer.AssignSegment(replica.GetCollectionID(), segmentInfos, availableNodes, false)
+		shardPlans := c.getBalancerFunc().AssignSegment(replica.GetCollectionID(), segmentInfos, availableNodes, false)
 		for i := range shardPlans {
 			shardPlans[i].Replica = replica
 		}
