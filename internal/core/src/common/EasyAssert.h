@@ -61,7 +61,9 @@ enum ErrorCode {
     MetricTypeNotMatch = 2031,
     DimNotMatch = 2032,
     KnowhereError = 2100,
-
+    MemAllocateFailed = 2033,
+    MemAllocateSizeNotMatch = 2034,
+    MmapSpaceInsufficient = 2035,
 };
 namespace impl {
 void
