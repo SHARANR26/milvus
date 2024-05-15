@@ -2,7 +2,7 @@ import datetime
 import logging
 import time
 from utils.util_log import test_log as logger
-from utils.utils import gen_collection_name
+from utils.utils import gen_collection_name, gen_unique_str
 import pytest
 from api.milvus import CollectionClient
 from base.testbase import TestBase
@@ -66,7 +66,7 @@ class TestCreateCollection(TestBase):
             "idType": id_type,
         }
         if id_type == "VarChar":
-            collection_payload["params"] = {"max_length": "256"}
+            collection_payload["params"] = {"max_length": 256}
         rsp = self.collection_client.collection_create(collection_payload)
         assert rsp['code'] == 200
         rsp = self.collection_client.collection_describe(name)
@@ -86,7 +86,7 @@ class TestCreateCollection(TestBase):
     @pytest.mark.parametrize("enable_dynamic_field", [False, "False", "0"])
     @pytest.mark.parametrize("request_shards_num", [2, "2"])
     @pytest.mark.parametrize("request_ttl_seconds", [360, "360"])
-    def test_create_collections_without_params(self, enable_dynamic_field, request_shards_num, request_ttl_seconds):
+    def test_create_collections_with_different_datatype_params(self, enable_dynamic_field, request_shards_num, request_ttl_seconds):
         """
         target: test create collection
         method: create a collection with a simple schema
@@ -155,9 +155,9 @@ class TestCreateCollection(TestBase):
         payload = {
             "collectionName": name,
             "enableDynamicField": True,
-            "params":{
+            "params": {
                 "shardsNum": f"{num_shards}",
-                "partitionsNum": f"{num_partitions}",
+                "partitionsNum": num_partitions,
                 "consistencyLevel": f"{consistency_level}",
                 "ttlSeconds": f"{ttl_seconds}",
             },
@@ -165,11 +165,11 @@ class TestCreateCollection(TestBase):
                 "fields": [
                     {"fieldName": "book_id", "dataType": "Int64", "isPrimary": True, "elementTypeParams": {}},
                     {"fieldName": "word_count", "dataType": "Int64", "isPartitionKey": True, "elementTypeParams": {}},
-                    {"fieldName": "book_describe", "dataType": "VarChar", "elementTypeParams": {"max_length": "256"}},
+                    {"fieldName": "book_describe", "dataType": "VarChar", "elementTypeParams": {"max_length": 256}},
                     {"fieldName": "json", "dataType": "JSON", "elementTypeParams": {}},
                     {"fieldName": "int_array", "dataType": "Array", "elementDataType": "Int64",
                      "elementTypeParams": {"max_capacity": "1024"}},
-                    {"fieldName": "book_intro", "dataType": "FloatVector", "elementTypeParams": {"dim": f"{dim}"}}
+                    {"fieldName": "book_intro", "dataType": "FloatVector", "elementTypeParams": {"dim": dim}}
                 ]
             },
             "indexParams": [
@@ -996,6 +996,38 @@ class TestDescribeCollectionNegative(TestBase):
         rsp = client.collection_describe(invalid_name)
         assert rsp['code'] == 100
         assert "can't find collection" in rsp['message']
+
+    def test_describe_collections_with_new_user(self):
+        """
+        target: test describe collection with invalid collection name
+        method: describe collection with new user which has no permission
+        expected: raise error with right error code and message
+        """
+        name = gen_collection_name()
+        dim = 128
+        client = self.collection_client
+        payload = {
+            "collectionName": name,
+            "dimension": dim,
+        }
+        rsp = client.collection_create(payload)
+        assert rsp['code'] == 200
+        rsp = client.collection_list()
+        all_collections = rsp['data']
+        assert name in all_collections
+        # describe collection with new user which has no permission
+        # create new user
+        user_name = gen_unique_str("user")
+        password = "12345678"
+        payload = {
+            "userName": user_name,
+            "password": password
+        }
+        rsp = self.user_client.user_create(payload)
+        self.collection_client.api_key = f"{user_name}:{password}"
+        rsp = client.collection_describe(name)
+        assert "PermissionDenied" in rsp['message']
+
 
 
 @pytest.mark.L0

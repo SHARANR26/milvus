@@ -44,7 +44,9 @@ class Requests:
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}',
-            'RequestId': str(uuid.uuid1())
+            'RequestId': str(uuid.uuid1()),
+            'DB-Name': 'default'
+
         }
         return headers
 
@@ -109,6 +111,8 @@ class VectorClient(Requests):
         self.token = token
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
+        self.time_out = "10"
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -116,8 +120,11 @@ class VectorClient(Requests):
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}',
             'Accept-Type-Allow-Int64': "true",
-            'RequestId': str(uuid.uuid1())
+            'RequestId': str(uuid.uuid1()),
+            'Request-Timeout': self.time_out
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def vector_search(self, payload, db_name="default", timeout=10):
@@ -195,8 +202,6 @@ class VectorClient(Requests):
 
         return response.json()
 
-
-
     def vector_query(self, payload, db_name="default", timeout=5):
         time.sleep(1)
         url = f'{self.endpoint}/v2/vectordb/entities/query'
@@ -267,6 +272,8 @@ class CollectionClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
+        self.time_out = "10"
         self.headers = self.update_headers()
 
     def update_headers(self, headers=None):
@@ -275,8 +282,11 @@ class CollectionClient(Requests):
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}',
-            'RequestId': str(uuid.uuid1())
+            'RequestId': str(uuid.uuid1()),
+            'Request-Timeout': self.time_out
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def collection_has(self, db_name="default", collection_name=None):
@@ -413,6 +423,7 @@ class PartitionClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -421,6 +432,8 @@ class PartitionClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def partition_list(self, db_name="default", collection_name=None):
@@ -528,6 +541,7 @@ class UserClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -536,6 +550,8 @@ class UserClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def user_list(self):
@@ -591,6 +607,7 @@ class RoleClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
         self.role_names = []
 
@@ -600,6 +617,8 @@ class RoleClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def role_list(self):
@@ -651,6 +670,7 @@ class IndexClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -659,6 +679,8 @@ class IndexClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers["DB-Name"] = self.header_db_name
         return headers
 
     def index_create(self, payload, db_name="default"):
@@ -712,6 +734,7 @@ class AliasClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -720,11 +743,17 @@ class AliasClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers.update({"DB-Name": self.db_name})
         return headers
 
-    def list_alias(self):
+    def list_alias(self, db_name="default"):
+        data = {}
+        if self.db_name is not None:
+            db_name = self.db_name
+        data.update({"dbName": db_name})
         url = f'{self.endpoint}/v2/vectordb/aliases/list'
-        response = self.post(url, headers=self.update_headers())
+        response = self.post(url, headers=self.update_headers(), data=data)
         res = response.json()
         return res
 
@@ -733,23 +762,31 @@ class AliasClient(Requests):
         data = {
             "aliasName": alias_name
         }
+        if self.db_name is not None:
+            data.update({"dbName": self.db_name})
         response = self.post(url, headers=self.update_headers(), data=data)
         res = response.json()
         return res
 
     def alter_alias(self, payload):
+        if self.db_name is not None:
+            payload["dbName"] = self.db_name
         url = f'{self.endpoint}/v2/vectordb/aliases/alter'
         response = self.post(url, headers=self.update_headers(), data=payload)
         res = response.json()
         return res
 
     def drop_alias(self, payload):
+        if self.db_name is not None:
+            payload["dbName"] = self.db_name
         url = f'{self.endpoint}/v2/vectordb/aliases/drop'
         response = self.post(url, headers=self.update_headers(), data=payload)
         res = response.json()
         return res
 
     def create_alias(self, payload):
+        if self.db_name is not None:
+            payload["dbName"] = self.db_name
         url = f'{self.endpoint}/v2/vectordb/aliases/create'
         response = self.post(url, headers=self.update_headers(), data=payload)
         res = response.json()
@@ -763,6 +800,7 @@ class ImportJobClient(Requests):
         self.endpoint = endpoint
         self.api_key = token
         self.db_name = None
+        self.header_db_name = None
         self.headers = self.update_headers()
 
     def update_headers(self):
@@ -771,6 +809,8 @@ class ImportJobClient(Requests):
             'Authorization': f'Bearer {self.api_key}',
             'RequestId': str(uuid.uuid1())
         }
+        if self.header_db_name is not None:
+            headers.update({"DB-Name": self.db_name})
         return headers
 
     def list_import_jobs(self, payload, db_name="default"):
