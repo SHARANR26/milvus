@@ -104,7 +104,8 @@ ChunkCache::Mmap(const std::filesystem::path& path,
         AssertInfo(
             false, "TODO: unimplemented for variable data type: {}", data_type);
     } else {
-        column = std::make_shared<Column>(file, data_size, dim, data_type);
+        column = std::make_shared<Column>(
+            file, data_size, dim, data_type, field_data->IsNullable());
     }
 
     // unlink
